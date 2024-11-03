@@ -78,7 +78,7 @@ class NeuronView:
             loaded_percentiles = self.load_percentiles(db, subject, missing_pctiles)
             self._percentiles_PLI.update(loaded_percentiles)
 
-        # Immediately refresh activations
+        # Immediately gather activations
         self._update_activations()
 
     @staticmethod
@@ -106,8 +106,12 @@ class NeuronView:
         return results
 
     @property
-    def cc(self) -> ModelInput:
+    def model_input(self) -> ModelInput:
         return self._model_input
+
+    @property
+    def filter(self):
+        return self._filter
 
     def num_tokens(self) -> int:
         return len(self._model_input.tokenize(self._subject))
@@ -137,16 +141,11 @@ class NeuronView:
 
             def _generator():
                 for update in cc.send_message(*args, **kwargs):
-                    # The last update is the only one that's not an int
-                    # So we update activations here before yielding
-                    if not isinstance(update, int):
-                        self._update_activations()
                     yield update
 
             return _generator()
         else:
             ans = cc.send_message(*args, **kwargs)
-            self._update_activations()
             return ans
 
     def _update_activations(self):
@@ -237,9 +236,6 @@ class NeuronView:
             del acts, grads, all_activations_t, gradients_t, vals, indices
 
         return self._attrs_LTfTsI[(target_token_idx, target_token_id, distractor_token_id)]
-
-    def get_filter(self) -> NeuronFilter | None:
-        return self._filter
 
     def set_filter(self, filter: NeuronFilter | None):
         """

@@ -90,7 +90,7 @@ Then, run the web server; this script also installs dependencies in `web/` if `w
 
 You can then view the web app at [`http://localhost:3000`](http://localhost:3000).
 
-<!-- ## Deploying to Modal
+## Deploying to Modal
 
 If you don't already have a Modal account, first [create one](https://modal.com). Then run the following command to authenticate:
 
@@ -104,4 +104,4 @@ Finally, deploy by running:
 
 ```bash
 modal deploy monitor/server_modal.py
-``` -->
+```

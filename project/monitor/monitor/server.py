@@ -5,6 +5,7 @@ import uuid
 from functools import lru_cache
 from typing import Generator, cast
 
+import modal
 from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -18,6 +19,7 @@ from neurondb.filters import (
     IdFilter,
     Neuron,
     NeuronDBFilter,
+    NeuronFilter,
     NeuronPolarity,
     NeuronsMetadataDict,
     TokenFilter,
@@ -25,50 +27,91 @@ from neurondb.filters import (
 from neurondb.postgres import DBManager
 from neurondb.view import NeuronView
 from pydantic import BaseModel
-from util.chat_input import make_chat_conversation
+from util.chat_input import ChatConversation, make_chat_conversation
 from util.errors import DBTimeoutException, EmbeddingException, LlmApiException
 from util.subject import Subject, llama31_8B_instruct_config
 from util.types import GenerateOutput
 
 asgi_app = app = FastAPI()
-
-# Add CORS middleware
 asgi_app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
-# Preloaded things
 @lru_cache(maxsize=1)
 def get_subject():
     return Subject(
         llama31_8B_instruct_config,
         output_attentions=True,
         cast_to_hf_config_dtype=True,
-        nnsight_lm_kwargs={"dispatch": False},
+        nnsight_lm_kwargs={"dispatch": True},
     )
 
+
+#################
+# Session state #
+#################
 
 SUBJECT = get_subject()
 DB = DBManager.get_instance()
 PERCENTILES_PLI = NeuronView.load_percentiles(DB, SUBJECT, QTILE_KEYS)
 
-# Session state
-SESSIONS: dict[str, NeuronView] = {}
-INTERVENTIONS: dict[str, list[InterventionRequest]] = {}
-FILTER_CACHE: dict[str, list[Neuron]] = {}
+# If running locally, use in-memory dicts for session state
+if modal.is_local():
+    print("Using local in-memory dicts")
+    _sessions: dict[str, tuple[ChatConversation, NeuronFilter | None]] = {}
+    _interventions: dict[str, list[InterventionRequest]] = {}
+    _filter_cache: dict[str, list[Neuron]] = {}
+# Otherwise, use remote Modal dicts that persist across runs
+else:
+    print("Using remote Modal dicts")
+    _sessions = cast(
+        dict[str, tuple[ChatConversation, NeuronFilter | None]],
+        modal.Dict.from_name("sessions", create_if_missing=True),  # type: ignore
+    )
+    _interventions = cast(
+        dict[str, list[InterventionRequest]],
+        modal.Dict.from_name("interventions", create_if_missing=True),  # type: ignore
+    )
+    _filter_cache = cast(
+        dict[str, list[Neuron]],
+        modal.Dict.from_name("filter_cache", create_if_missing=True),  # type: ignore
+    )
+
+# Assign the global variables
+SESSIONS, INTERVENTIONS, FILTER_CACHE = _sessions, _interventions, _filter_cache
+
+
+def make_new_nv() -> NeuronView:
+    cc = make_chat_conversation()
+    return NeuronView(SUBJECT, DB, cc, PERCENTILES_PLI)
+
+
+def get_nv(session_id: str) -> NeuronView:
+    """
+    Convert the saved session state into a NeuronView.
+    May be slow because the NeuronView constructor recomputes activations.
+    """
+
+    if session_id not in SESSIONS:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    cc, filter = SESSIONS[session_id]
+    nv = NeuronView(SUBJECT, DB, cc, PERCENTILES_PLI)
+    if filter is not None:
+        nv.set_filter(filter)
+    return nv
 
 
 @asgi_app.post("/register")
 async def register():
     session_id = str(uuid.uuid4())
-    cc = make_chat_conversation()
-    nv = NeuronView(SUBJECT, DB, cc, PERCENTILES_PLI)
-    SESSIONS[session_id] = nv
+    nv = make_new_nv()
+    SESSIONS[session_id] = (ChatConversation(**nv.model_input.model_dump()), nv.filter)
     return session_id
 
 
@@ -99,7 +142,6 @@ class InterventionRequest(BaseModel):
 async def register_intervention(session_id: str, payload: list[InterventionRequest]):
     if session_id not in SESSIONS:
         raise HTTPException(status_code=404, detail="Session not found")
-    SESSIONS[session_id]
 
     intervention_id = str(uuid.uuid4())
     INTERVENTIONS[intervention_id] = payload
@@ -110,12 +152,10 @@ async def register_intervention(session_id: str, payload: list[InterventionReque
 async def clear_conversation(session_id: str):
     if session_id not in SESSIONS:
         raise HTTPException(status_code=404, detail="Session not found")
-    nv = SESSIONS[session_id]
 
     # Make new empty chat conversation
     cc = make_chat_conversation()
-    nv = NeuronView(SUBJECT, DB, cc, PERCENTILES_PLI)
-    SESSIONS[session_id] = nv
+    SESSIONS[session_id] = (cc, None)
 
 
 @asgi_app.get("/message/{session_id}")
@@ -126,9 +166,7 @@ async def send_message_sse(
     temperature: float | None = Query(None),
     intervention_id: str | None = Query(None),
 ):
-    if session_id not in SESSIONS:
-        raise HTTPException(status_code=404, detail="Session not found")
-    nv = SESSIONS[session_id]
+    nv = get_nv(session_id)
 
     interventions: dict[tuple[int, int, int], float] = {}
     if intervention_id is not None:
@@ -205,6 +243,7 @@ async def send_message_sse(
                 yield "data: [DONE]\n\n"
 
         nv.clear_neuron_interventions()
+        SESSIONS[session_id] = (ChatConversation(**nv.model_input.model_dump()), nv.filter)
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
@@ -226,25 +265,25 @@ async def get_neurons_with_filter(
         | ComplexFilter
     ) = Body(...),
 ):
-    """
-    Here the polarity matters, since it will be used for steering.
-    """
+    # If contains an activation or attribution filter, depends on the run
+    requires_run_metadata = filter.contains_filter_type(
+        ActivationPercentileFilter
+    ) or filter.contains_filter_type(AttributionFilter)
 
-    if session_id not in SESSIONS:
-        raise HTTPException(status_code=404, detail="Session not found")
-    nv = SESSIONS[session_id]
+    # If the result depends on the run, get the NeuronView with refreshed activations
+    if requires_run_metadata:
+        nv = get_nv(session_id)
+    # Otherwise, we can save the cost of refreshing activations and use an empty NV
+    else:
+        nv = NeuronView(SUBJECT, DB, make_chat_conversation(), PERCENTILES_PLI)
 
     try:
         nv.set_filter(filter)
 
-        # If contains an activation or attribution filter, get tokens and run metadata
-        include_run_metadata = filter.contains_filter_type(
-            ActivationPercentileFilter
-        ) or filter.contains_filter_type(AttributionFilter)
-        neurons = nv.get_neurons(
-            with_tokens=include_run_metadata,
+        neurons = nv.get_neurons(with_tokens=requires_run_metadata)
+        neurons_metadata_dict = nv.get_neurons_metadata_dict(
+            neurons, include_run_metadata=requires_run_metadata
         )
-        neurons_metadata_dict = nv.get_neurons_metadata_dict(neurons, include_run_metadata)
 
         return NeuronsAndMetadataResponse(
             neurons=neurons,
@@ -275,10 +314,7 @@ async def linter(
         | ComplexFilter
     ) = Body(...),
 ):
-    if session_id not in SESSIONS:
-        raise HTTPException(status_code=404, detail="Session not found")
-
-    nv = SESSIONS[session_id]
+    nv = get_nv(session_id)
     nv.set_filter(filter)
 
     # Get neurons from the NeuronView
