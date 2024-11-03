@@ -32,6 +32,40 @@ from util.errors import DBTimeoutException, EmbeddingException, LlmApiException
 from util.subject import Subject, llama31_8B_instruct_config
 from util.types import GenerateOutput
 
+
+class ChatToken(BaseModel):
+    token: str
+    so_lens_highlight: float | None = None
+    top_log_probs: list[tuple[str, float]] | None = None
+
+
+class AttributionResponse(BaseModel):
+    attribution_results: list[AttributionResult]
+    chat_tokens: list[ChatToken]
+
+
+class InterventionRequest(BaseModel):
+    token_ranges: list[tuple[int, int]]
+    filter: (
+        NeuronDBFilter
+        | ActivationPercentileFilter
+        | AttributionFilter
+        | TokenFilter
+        | ComplexFilter
+    )
+    strength: float
+
+
+class NeuronsAndMetadataResponse(BaseModel):
+    neurons: list[Neuron]
+    neurons_metadata_dict: NeuronsMetadataDict
+
+
+class ClusterResponse(BaseModel):
+    clusters: list[Cluster]
+    n_failures: int
+
+
 asgi_app = app = FastAPI()
 asgi_app.add_middleware(
     CORSMiddleware,
@@ -113,29 +147,6 @@ async def register():
     nv = make_new_nv()
     SESSIONS[session_id] = (ChatConversation(**nv.model_input.model_dump()), nv.filter)
     return session_id
-
-
-class ChatToken(BaseModel):
-    token: str
-    so_lens_highlight: float | None = None
-    top_log_probs: list[tuple[str, float]] | None = None
-
-
-class AttributionResponse(BaseModel):
-    attribution_results: list[AttributionResult]
-    chat_tokens: list[ChatToken]
-
-
-class InterventionRequest(BaseModel):
-    token_ranges: list[tuple[int, int]]
-    filter: (
-        NeuronDBFilter
-        | ActivationPercentileFilter
-        | AttributionFilter
-        | TokenFilter
-        | ComplexFilter
-    )
-    strength: float
 
 
 @asgi_app.post("/register/intervention/{session_id}")
@@ -248,11 +259,6 @@ async def send_message_sse(
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
-class NeuronsAndMetadataResponse(BaseModel):
-    neurons: list[Neuron]
-    neurons_metadata_dict: NeuronsMetadataDict
-
-
 @asgi_app.post("/neurons/{session_id}", response_model=NeuronsAndMetadataResponse)
 async def get_neurons_with_filter(
     session_id: str,
@@ -295,11 +301,6 @@ async def get_neurons_with_filter(
         raise HTTPException(status_code=502, detail="Embedding API error")
     except LlmApiException:
         raise HTTPException(status_code=502, detail="LLM API error")
-
-
-class ClusterResponse(BaseModel):
-    clusters: list[Cluster]
-    n_failures: int
 
 
 @asgi_app.post("/neurons/cluster/{session_id}")
