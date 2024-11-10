@@ -7,9 +7,11 @@ from uuid import uuid4
 
 import backoff
 import tiktoken
+from backoff.types import Details
 from openai import AsyncOpenAI, OpenAI
 from openai._types import NOT_GIVEN
 from openai.types.chat import ChatCompletion, ChatCompletionMessageParam
+from tqdm.asyncio import tqdm_asyncio
 from util.env import ENV
 from util.types import ChatMessage
 
@@ -17,11 +19,18 @@ DEFAULT_TIKTOKEN_ENCODING = "cl100k_base"
 MAX_EMBEDDING_TOKENS = 8000
 
 
+def _print_backoff_message(e: Details):
+    print(
+        f"OpenAI backing off for {e['wait']:.2f}s due to {e['exception'].__class__.__name__}"  # type: ignore
+    )
+
+
 @backoff.on_exception(
     backoff.expo,
     exception=(Exception),
     max_tries=3,
     factor=2.0,
+    on_backoff=_print_backoff_message,
 )
 async def _get_openai_chat_completion_async(
     client: AsyncOpenAI,
@@ -29,13 +38,15 @@ async def _get_openai_chat_completion_async(
     model_name: str,
     max_new_tokens: int = 32,
     temperature: float = 1.0,
+    timeout: float = 5.0,
 ):
-    return await client.chat.completions.create(
-        model=model_name,
-        messages=[cast(ChatCompletionMessageParam, message) for message in messages],
-        max_tokens=max_new_tokens,
-        temperature=temperature,
-    )
+    async with asyncio.timeout(timeout) if timeout else asyncio.nullcontext():  # type: ignore
+        return await client.chat.completions.create(
+            model=model_name,
+            messages=[cast(ChatCompletionMessageParam, message) for message in messages],
+            max_tokens=max_new_tokens,
+            temperature=temperature,
+        )
 
 
 def get_openai_client_sync() -> OpenAI:
@@ -57,12 +68,15 @@ async def get_openai_chat_completions_async(
     max_new_tokens: int = 32,
     temperature: float = 1.0,
     max_concurrency: int = 100,
+    timeout: float = 5.0,
+    use_tqdm: bool = False,
 ):
     base_func = partial(
         _get_openai_chat_completion_async,
         model_name=model_name,
         max_new_tokens=max_new_tokens,
         temperature=temperature,
+        timeout=timeout,
     )
 
     semaphore = asyncio.Semaphore(max_concurrency)
@@ -72,11 +86,20 @@ async def get_openai_chat_completions_async(
             try:
                 return await base_func(client=client, messages=messages)
             except Exception as e:
-                print(f"Error in get_openai_chat_completion_async: {e}. Returning None.")
+                print(
+                    f"OpenAI chat completion failed even with backoff: {e.__class__.__name__}. Returning None."
+                )
                 return None
 
     tasks = [limited_task(messages) for messages in messages_list]
-    responses = await asyncio.gather(*tasks)
+    if use_tqdm:
+        responses = cast(
+            list[ChatCompletion | None],
+            await tqdm_asyncio.gather(*tasks, desc="Processing messages"),  # type: ignore
+        )
+    else:
+        responses = await asyncio.gather(*tasks)
+
     return responses
 
 
@@ -87,6 +110,8 @@ def get_openai_chat_completions_parallel(
     max_new_tokens: int = 32,
     temperature: float = 1.0,
     max_concurrency: int = 100,
+    timeout: float = 5.0,
+    use_tqdm: bool = False,
 ) -> list[ChatCompletion | None]:
     """
     Synchronously get chat completions for multiple message lists using parallel processing with asyncio.
@@ -102,6 +127,8 @@ def get_openai_chat_completions_parallel(
                 max_new_tokens=max_new_tokens,
                 temperature=temperature,
                 max_concurrency=max_concurrency,
+                use_tqdm=use_tqdm,
+                timeout=timeout,
             ),
         )
         return future.result()
@@ -112,6 +139,7 @@ def get_openai_chat_completions_parallel(
     exception=(Exception),
     max_tries=3,
     factor=2.0,
+    on_backoff=_print_backoff_message,
 )
 async def _get_openai_embeddings_async_one_batch(
     client: AsyncOpenAI, texts_batch: list[str], model_name: str, dimensions: int | None
@@ -246,50 +274,6 @@ def get_openai_embeddings_parallel(
             ),
         )
         return future.result()
-
-
-# def get_openai_embeddings_parallel(
-#     client: AsyncOpenAI,
-#     texts: list[str],
-#     model_name: str = "text-embedding-3-large",
-#     dimensions: int | None = 1536,
-#     max_concurrency: int = 100,
-# ) -> list[list[float] | None]:
-#     """
-#     Synchronously get embeddings for a list of texts using parallel processing with asyncio.
-#     This function runs the async code in a new event loop in a separate thread to avoid event loop conflicts.
-#     """
-
-#     async def run_async():
-#         return await get_openai_embeddings_async(
-#             client=client,
-#             texts=texts,
-#             model_name=model_name,
-#             dimensions=dimensions,
-#             max_concurrency=max_concurrency,
-#         )
-
-#     result: list[list[float] | None] | None = None
-#     exception: Exception | None = None
-
-#     def run_in_thread():
-#         nonlocal result, exception
-#         new_loop = asyncio.new_event_loop()
-#         asyncio.set_event_loop(new_loop)
-#         try:
-#             result = new_loop.run_until_complete(run_async())
-#         except Exception as e:
-#             exception = e
-#         finally:
-#             new_loop.close()
-
-#     thread = threading.Thread(target=run_in_thread)
-#     thread.start()
-#     thread.join()
-
-#     assert result is not None, "No result returned from async function"
-
-#     return result
 
 
 ##############
