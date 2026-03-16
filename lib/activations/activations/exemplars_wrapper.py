@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Literal, Optional, Sequence, Set, Tuple
 import matplotlib.pyplot as plt
 import numpy as np
 from activations.activations import ActivationRecord
+from activations.activations_computation import ActivationType
 from activations.dataset import (
     ChatDataset,
     HFDatasetWrapper,
@@ -321,7 +322,7 @@ class ExemplarConfig(BaseModel):
     batch_size: int = 512
     rand_seqs: int = 10
     seed: int = 64
-    activation_type: Literal["MLP"] = "MLP"
+    activation_type: ActivationType = ActivationType.NEURONS
 
 
 class ExemplarsWrapper:
@@ -347,6 +348,8 @@ class ExemplarsWrapper:
         if subject.is_chat_model:
             folder_name_components.append("chat")
         folder_name_components.append(f"{config.seq_len}seqlen")
+        if config.activation_type != "neurons":
+            folder_name_components.append(config.activation_type)
         assert subject.tokenizer.padding_side == "left"
 
         folder_name = "_".join(folder_name_components)
@@ -430,10 +433,7 @@ class ExemplarsWrapper:
             ExemplarSplit.RANDOM_TEST,
         )
 
-        if self.config.activation_type == "MLP":
-            num_features = self.subject.I
-        else:
-            raise ValueError(f"Invalid activation type: {self.config.activation_type}")
+        num_features = self.num_features
         num_top_feats_to_save = self.config.num_top_acts_to_save
         k, seq_len = self.config.k, self.config.seq_len
 
@@ -496,10 +496,7 @@ class ExemplarsWrapper:
         layer_dir = self.get_layer_dir(layer, split)
         os.makedirs(layer_dir, exist_ok=True)
 
-        if self.config.activation_type == "MLP":
-            num_features = self.subject.I
-        else:
-            raise ValueError(f"Invalid activation type: {self.config.activation_type}")
+        num_features = self.num_features
         num_top_feats_to_save = self.config.num_top_acts_to_save
         k, seq_len = self.config.k, self.config.seq_len
 
@@ -882,6 +879,19 @@ class ExemplarsWrapper:
                 )
             )
         display(HTML(html_content))  # type: ignore
+
+    @property
+    def num_features(self) -> int:
+        if self.config.activation_type == ActivationType.NEURONS:
+            return self.subject.I
+        if self.config.activation_type in (
+            ActivationType.RESID,
+            ActivationType.MLP_IN,
+            ActivationType.MLP_OUT,
+            ActivationType.ATTN_OUT,
+        ):
+            return self.subject.D
+        raise ValueError(f"Invalid activation type: {self.config.activation_type}")
 
 
 ###################

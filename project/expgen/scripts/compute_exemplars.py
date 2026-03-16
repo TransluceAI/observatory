@@ -4,8 +4,10 @@ Can also save random sequences for each split and neuron.
 """
 
 import argparse
+from typing import Any
 
-from activations.dataset import fineweb_dset_config, lmsys_dset_config
+from activations.activations_computation import ActivationType
+from activations.dataset import HFDatasetWrapperConfig, fineweb_dset_config, lmsys_dset_config
 from activations.exemplars import ExemplarSplit
 from activations.exemplars_computation import (
     compute_exemplars_for_layer,
@@ -16,11 +18,24 @@ from util.subject import Subject, get_subject_config
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
+    "--activation_type",
+    type=str,
+    choices=[
+        ActivationType.RESID,
+        ActivationType.MLP_IN,
+        ActivationType.MLP_OUT,
+        ActivationType.ATTN_OUT,
+        ActivationType.NEURONS,
+    ],
+    default="neurons",
+    help="Type of activations from which we pick indices to compute exemplars for.",
+)
+parser.add_argument(
     "--layer_indices",
     type=int,
     nargs="+",
     default=None,
-    help="Layers from which we pick neurons to compute exemplars for.",
+    help="Layers from which we pick indices to compute exemplars for.",
 )
 parser.add_argument(
     "--subject_hf_model_id",
@@ -87,7 +102,7 @@ assert args.seq_len >= 64, "It's probably best to use long-enough sequences."
 subject_config = get_subject_config(args.subject_hf_model_id)
 subject = Subject(subject_config, nnsight_lm_kwargs={"dispatch": True})
 
-hf_dataset_configs = []
+hf_dataset_configs: list[HFDatasetWrapperConfig] = []
 for hf_dataset in args.hf_datasets:
     if hf_dataset == "fineweb":
         hf_dataset_configs.append(fineweb_dset_config)
@@ -106,13 +121,14 @@ exemplar_config = ExemplarConfig(
     num_top_acts_to_save=args.num_top_acts_to_save,
     batch_size=args.batch_size,
     seed=args.seed,
+    activation_type=args.activation_type,
 )
 exemplars_wrapper = ExemplarsWrapper(args.data_dir, exemplar_config, subject)
 
 layer_indices = args.layer_indices if args.layer_indices else range(subject.L)
 for layer in layer_indices:
     print(f"============ Layer {layer} ============")
-    kwargs = {
+    kwargs: dict[str, Any] = {
         "exemplars_wrapper": exemplars_wrapper,
         "layer": layer,
         "split": ExemplarSplit(args.split),
