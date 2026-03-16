@@ -527,7 +527,7 @@ export function TokenSelector({
                 ? 'bg-[#dae4fbff]'
                 : 'bg-gray-200';
           const bubbleClassName = cn(
-            'max-w-[80%] p-2 rounded-lg shadow-sm transition-colors duration-150',
+            'max-w-[80%] p-2 rounded-lg shadow-sm transition-colors duration-150 inline-flex flex-wrap',
             bubbleColorClass
           );
           return (
