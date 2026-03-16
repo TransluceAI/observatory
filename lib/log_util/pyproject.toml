@@ -1,0 +1,24 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "log_util"
+version = "0.0.1"
+description = "Library for logging"
+
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.hatch.build.targets.wheel]
+packages = ["log_util"]
+
+[tool.pyright]
+strict = ["log_util"]
+reportMissingTypeStubs = false
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.uv]
+managed = false

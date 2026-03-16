@@ -14,13 +14,13 @@ dependencies = [
     "matplotlib==3.9.0",
     "nnsight==0.3.3",
     "numpy==1.26.4",
-    "openai==1.45.0",
-    "anthropic==0.34.1",
+    "openai>=1.45.0",
+    "anthropic>=0.34.1",
     "orjson==3.10.6",
     "scikit-learn==1.5.0",
     "tiktoken==0.7.0",
-    "torch==2.4.0",
-    "transformers==4.45.0",
+    "torch>=2.4.0",
+    "transformers>=4.45.0",
     "python-dotenv==1.0.1",
 ]
 

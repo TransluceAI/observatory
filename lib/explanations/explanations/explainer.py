@@ -104,8 +104,8 @@ class VLLMExplainer(Explainer):
         prompts: List[str] = []
         for messages in messages_list:
             assert len(messages) == 2
-            input_str: str = self.tokenizer.apply_chat_template(  # type: ignore
-                messages, add_generation_prompt=True, tokenize=False
+            input_str: str = self.tokenizer.apply_chat_template(
+                messages, add_generation_prompt=True, tokenize=False, return_dict=False
             )
             prompts.append(input_str)
 

@@ -83,8 +83,8 @@ class Llama3TokenizerWrapper:
             seq = msg["content"]
             upd_seq = self.update_input(seq)
             upd_messages.append(ChatMessage(role=msg["role"], content=upd_seq))
-        return self.tokenizer.apply_chat_template(  # type: ignore
-            cast(List[Dict[str, str]], upd_messages), *args, **kwargs
+        return self.tokenizer.apply_chat_template(
+            cast(List[Dict[str, str]], upd_messages), *args, **kwargs, return_dict=False
         )
 
     def __call__(self, seq: str | List[str], *args: Any, **kwargs: Any):

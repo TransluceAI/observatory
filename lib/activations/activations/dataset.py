@@ -24,16 +24,16 @@ class HFSplitDatasetWrapper(Dataset[Any]):
 
     def __len__(self) -> int:
         assert hasattr(self.dataset, "__len__")
-        return len(self.dataset)  # type: ignore
+        return len(self.dataset)
 
     def __getitem__(self, idx: int) -> List[int]:
         example = self.dataset[idx]["data_column"]
         if self.is_chat_format:
-            ids = self.subject.tokenizer.apply_chat_template(  # type: ignore
-                example, add_generation_prompt=False, tokenize=True  # type: ignore
+            ids = self.subject.tokenizer.apply_chat_template(
+                example, add_generation_prompt=False, tokenize=True, return_dict=False
             )
         else:
-            ids = self.subject.tokenizer.encode(example, add_special_tokens=True)  # type: ignore
+            ids = self.subject.tokenizer.encode(example, add_special_tokens=True)
         ids: List[int] = list(ids)
         return ids
 

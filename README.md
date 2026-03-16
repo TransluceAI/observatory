@@ -11,6 +11,7 @@ This repository hosts code for two projects:
 
 - [Installation](#installation)
 - [Getting Started](#getting-started)
+  - [LatentQA](#latentqa)
   - [Neuron Descriptions](#neuron-descriptions)
   - [Monitor](#monitor)
 - [Using `luce`](#using-luce)
@@ -72,6 +73,9 @@ These variables are always required:
 The rest of the variables are only required for running the NeuronDB or Monitor; you can safely ignore them for now.
 
 ## Getting Started
+
+### LatentQA
+See the [latentqa README](project/latentqa/README.md) for training LatentQA decoders for extracting user LM's user representations.
 
 ### Neuron Descriptions
 

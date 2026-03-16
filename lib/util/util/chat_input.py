@@ -129,9 +129,10 @@ class ChatInput(ModelInput):
                 messages.append({"role": "assistant", "content": self.seed_response})
 
             # Tokenize messages
-            toks: list[int] = subject.tokenizer.apply_chat_template(  # type: ignore
+            toks: list[int] = subject.tokenizer.apply_chat_template(
                 cast(list[dict[str, str]], messages),
-                add_generation_prompt=last_role == "user" and not self.seed_response,  # type: ignore
+                add_generation_prompt=last_role == "user" and not self.seed_response,
+                return_dict=False,
             )
             if self.seed_response:
                 # Strip everything starting at last EOS token (sometimes there are extraneous tokens)
@@ -146,7 +147,7 @@ class ChatInput(ModelInput):
                 self.system_prompt is None and self.seed_response is None
             ), "If `subject.is_chat_model` is False, system_prompt and seed_response must be None."
 
-            toks: list[int] = subject.tokenizer(self.conversation[0]["content"])["input_ids"]  # type: ignore
+            toks: list[int] = subject.tokenizer(self.conversation[0]["content"])["input_ids"]
             return toks
 
     ##############

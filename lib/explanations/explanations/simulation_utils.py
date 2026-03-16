@@ -359,11 +359,13 @@ class NeuronSimulator:
         # Tokenize prefix messages.
         # TODO(damichoi): Add support for base models. This isn't a priority since from our
         # earlier tests we found that using a base model is worse than an instruct model.
-        prefix_ids: List[int] = tokenizer.apply_chat_template(  # type: ignore
-            cast(list[dict[str, str]], prefix_messages), add_generation_prompt=False
+        prefix_ids: List[int] = tokenizer.apply_chat_template(
+            cast(list[dict[str, str]], prefix_messages),
+            add_generation_prompt=False,
+            return_dict=False,
         )
         if isinstance(tokenizer, LlamaTokenizer) or isinstance(tokenizer, LlamaTokenizerFast):
-            default_sys_prompt_ids = tokenizer.encode(  # type: ignore
+            default_sys_prompt_ids = tokenizer.encode(
                 LLAMA31_INSTRUCT_PREFIX, add_special_tokens=False
             )
         else:
@@ -378,7 +380,7 @@ class NeuronSimulator:
                     example_tokens.extend([t for t, _ in token_activation_pairs])
 
             prefix_ids, _ = parse_prompt(
-                [tokenizer.decode(id) for id in prefix_ids],  # type: ignore
+                [tokenizer.decode(id) for id in prefix_ids],
                 prefix_ids,
                 original_sequence_tokens=example_tokens,
                 unknown_tokens=["unknown"] + VALID_ACTIVATION_TOKENS_ORDERED,
@@ -416,8 +418,8 @@ class NeuronSimulator:
         This involves removing the default system prompt message added when calling
         tokenizer.apply_chat_template(messages).
         """
-        input_ids: List[int] = self.tokenizer.apply_chat_template(  # type: ignore
-            cast(List[Dict[str, str]], messages), add_generation_prompt=False
+        input_ids: List[int] = self.tokenizer.apply_chat_template(
+            cast(List[Dict[str, str]], messages), add_generation_prompt=False, return_dict=False
         )
         if self.default_sys_prompt_ids:
             assert input_ids[: len(self.default_sys_prompt_ids)] == self.default_sys_prompt_ids
@@ -437,7 +439,7 @@ class NeuronSimulator:
 
             # Optionally remove <tab> tokens and get location of unknown tokens.
             upd_input_ids, unk_indices = parse_prompt(
-                [self.tokenizer.decode(id) for id in input_ids],  # type: ignore
+                [self.tokenizer.decode(id) for id in input_ids],
                 input_ids,
                 original_sequence_tokens=tokens,
                 unknown_tokens=["unknown"],
