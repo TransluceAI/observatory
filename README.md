@@ -2,8 +2,10 @@
 
 Transluce is an independent research lab building open, scalable technology for understanding AI systems and steering them in the public interest.
 
-This repository hosts code for two projects:
+This repository hosts code for the following projects:
 
+- [User Modeling](https://transluce.org/user-modeling), which is about creating datasets to study language model's latent user representations;
+- [LatentQA](https://transluce.org/user-modeling), which trains decoders to read and steer user representations in language models;
 - [Neuron Descriptions](https://transluce.org/neuron-descriptions), which automatically generates high-quality descriptions of language model neurons;
 - The [Monitor](https://transluce.org/observability-interface) interface, which helps humans observe, understand, and steer the internal computations of language models.
 
@@ -11,6 +13,7 @@ This repository hosts code for two projects:
 
 - [Installation](#installation)
 - [Getting Started](#getting-started)
+  - [User Modeling](#user-modeling)
   - [LatentQA](#latentqa)
   - [Neuron Descriptions](#neuron-descriptions)
   - [Monitor](#monitor)
@@ -74,8 +77,11 @@ The rest of the variables are only required for running the NeuronDB or Monitor;
 
 ## Getting Started
 
+### User Modeling
+See the [user modeling README](project/user_modeling/README.md) for generating data to study how language models represent users.
+
 ### LatentQA
-See the [latentqa README](project/latentqa/README.md) for training LatentQA decoders for extracting user LM's user representations.
+See the [latentqa README](project/latentqa/README.md) for training LatentQA decoders to read and steer user representations in language models.
 
 ### Neuron Descriptions
 
@@ -133,9 +139,20 @@ If you run into any issues, please file an issue or reach out to us at [info@tra
 
 ## Citation
 
-If you use this code for your research, please cite our [paper](https://transluce.org/neuron-descriptions):
+If you use this code for your research, please cite our work:
 
+```bibtex
+@misc{choi2025scalably,
+  author       = {Choi, Dami and Huang, Vincent and Schwettmann, Sarah and Steinhardt, Jacob},
+  title        = {Scalably Extracting Latent Representations of Users},
+  year         = {2025},
+  month        = {November},
+  day          = {25},
+  howpublished = {\url{https://transluce.org/user-modeling}}
+}
 ```
+
+```bibtex
 @misc{choi2024automatic,
   author       = {Choi, Dami and Huang, Vincent and Meng, Kevin and Johnson, Daniel D and Steinhardt, Jacob and Schwettmann, Sarah},
   title        = {Scaling Automatic Neuron Description},
