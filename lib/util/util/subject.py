@@ -302,7 +302,7 @@ class Subject:
                 if "mlp_out_BTD" in include:
                     layer_acts["mlp_out_BTD"] = self.mlps[layer].output.detach().save()
                 if "attn_out_BTD" in include:
-                    layer_acts["attn_out_BTD"] = self.attns[layer].output.detach().save()
+                    layer_acts["attn_out_BTD"] = self.attns[layer].output[0].detach().save()
                 if "attn_map_BQTT" in include:
                     layer_acts["attn_map_BQTT"] = self.attns[layer].output[1].detach().save()
                 if "neurons_BTI" in include:

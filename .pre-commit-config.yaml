@@ -20,7 +20,7 @@ repos:
       - id: jupyter-clear-output
         name: jupyter-clear-output
         files: \.ipynb$
-        stages: [commit]
+        stages: [pre-commit]
         language: system
         entry: jupyter nbconvert --ClearOutputPreprocessor.enabled=True --inplace
 
