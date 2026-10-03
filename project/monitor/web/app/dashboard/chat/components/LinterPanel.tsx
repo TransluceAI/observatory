@@ -181,6 +181,8 @@ export default function LinterPanel() {
   // Store the abortable promise returned by clusterNeurons
   const prevClusterNeuronsPromiseRef =
     useRef<ReturnType<typeof clusterNeurons>>();
+  const curLinterMessageIdRef = useRef<string>();
+  const [clusterRetryCount, setClusterRetryCount] = useState(0);
   // Store the requestId of the current clusterNeurons request; do not update clusters less it matches this
   const [curClusterRequestId, setCurClusterRequestId] = useState<
     string | undefined
@@ -231,9 +233,33 @@ export default function LinterPanel() {
       prevClusterNeuronsPromiseRef.current = promise;
       setCurClusterRequestId(requestId);
 
+      promise.unwrap().catch((error) => {
+        if (prevClusterNeuronsPromiseRef.current !== promise) return;
+        prevClusterNeuronsPromiseRef.current = undefined;
+        dispatch(setLoadingTokenSelectionLinterMessageId(undefined));
+        const messageId = curLinterMessageIdRef.current;
+        if (messageId) {
+          dispatch(
+            updateLinterMessage({
+              id: messageId,
+              message: {
+                type: 'neuronClusters',
+                id: messageId,
+                error:
+                  error?.status === 'TIMEOUT_ERROR'
+                    ? 'Clustering took too long. Please try again.'
+                    : 'Could not scan for clusters. Please try again.',
+                showNeuronsFrom,
+              } as NeuronClustersLinterMessage,
+            })
+          );
+        }
+      });
+
       // Send linter message that can be overwritten later
       if (!aborted) {
         const linterMessageId = uuidv4();
+        curLinterMessageIdRef.current = linterMessageId;
         setCurLinterMessageId(linterMessageId);
         dispatch(
           addLinterMessage({
@@ -243,10 +269,21 @@ export default function LinterPanel() {
             showNeuronsFrom: showNeuronsFrom,
           } as NeuronClustersLinterMessage)
         );
+      } else if (curLinterMessageIdRef.current) {
+        dispatch(
+          updateLinterMessage({
+            id: curLinterMessageIdRef.current,
+            message: {
+              type: 'neuronClusters',
+              id: curLinterMessageIdRef.current,
+              showNeuronsFrom,
+            } as NeuronClustersLinterMessage,
+          })
+        );
       }
     }
     // }, [neuronsMetadataDict, globalNeuronFilter, selectedTokenRange]);
-  }, [neuronsMetadataDict, globalNeuronFilter, flowState?.tokensSelected]);
+  }, [neuronsMetadataDict, globalNeuronFilter, flowState?.tokensSelected, clusterRetryCount]);
   const showNeuronsFrom = useSelector(
     (state: RootState) => state.neurons.displayModulation.showNeuronsFrom
   );
@@ -273,6 +310,7 @@ export default function LinterPanel() {
           id: curLinterMessageId,
           message: {
             type: 'neuronClusters',
+            id: curLinterMessageId,
             clusters: clonedClusters,
             showNeuronsFrom: showNeuronsFrom,
           } as NeuronClustersLinterMessage,
@@ -534,7 +572,19 @@ export default function LinterPanel() {
 
           const curMessage = message as NeuronClustersLinterMessage;
 
-          if (curMessage.clusters === undefined) {
+          if (curMessage.error) {
+            return {
+              type: 'assistant',
+              content: (
+                <>
+                  <div>{curMessage.error}</div>
+                  <Button size="sm" variant="secondary" onClick={() => setClusterRetryCount((count) => count + 1)}>
+                    Retry scan
+                  </Button>
+                </>
+              ),
+            } as DisplayedLinterMessage;
+          } else if (curMessage.clusters === undefined) {
             return {
               type: 'assistant',
               content: (

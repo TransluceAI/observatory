@@ -51,6 +51,7 @@ export interface TokenSelectionLinterMessage extends LinterMessage {
 export interface NeuronClustersLinterMessage extends LinterMessage {
   type: 'neuronClusters';
   clusters?: NeuronCluster[];
+  error?: string;
   showNeuronsFrom: 'attribution' | 'activation';
 }
 
