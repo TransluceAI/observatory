@@ -1,3 +1,4 @@
+import asyncio
 import re
 from typing import cast
 from uuid import uuid4
@@ -5,7 +6,10 @@ from uuid import uuid4
 import numpy as np
 import scipy.cluster.hierarchy as sch  # type: ignore
 from neurondb.filters import Neuron, NeuronPolarity, NeuronsMetadataDict
+from neurondb.postgres import DBManager
+from neurondb.schemas import SQLANeuron, SQLANeuronDescription
 from pydantic import BaseModel, Field
+from util.errors import EmbeddingException
 from util.openai import get_openai_client_async, get_openai_embeddings_async
 from util.prod_llms import get_llm_completions_async
 from util.types import ChatMessage, NDIntArray
@@ -107,6 +111,38 @@ class Cluster(BaseModel):
     similarity: int  # from 1 (most similar) to 7 (least similar)
 
 
+def _get_stored_embeddings(neurons: list[NeuronWithDescription]) -> np.ndarray:
+    rows = DBManager.get_instance().get(
+        [
+            SQLANeuron.layer,
+            SQLANeuron.neuron,
+            SQLANeuronDescription.polarity,
+            SQLANeuronDescription.description_summary,
+            SQLANeuronDescription.description_embedding,
+        ],
+        joins=[(SQLANeuron, SQLANeuron.id == SQLANeuronDescription.neuron_id)],
+        layer_neuron_tuples=list({(n.layer, n.neuron) for n in neurons}),
+        timeout_ms=10_000,
+    )
+    by_description = {
+        (layer, neuron, polarity, summary): embedding
+        for layer, neuron, polarity, summary, embedding in rows
+    }
+
+    def key(n: NeuronWithDescription) -> tuple[int, int, int, str]:
+        if n.polarity is None:
+            raise EmbeddingException("Neuron polarity is required for stored embeddings")
+        return n.layer, n.neuron, int(n.polarity.value), n.description
+
+    try:
+        return np.asarray(
+            [by_description[key(n)] for n in neurons],
+            dtype=float,
+        )
+    except KeyError as exc:
+        raise EmbeddingException("Stored neuron embedding not found") from exc
+
+
 async def cluster_neurons(
     neurons: list[Neuron],
     metadata: NeuronsMetadataDict,
@@ -154,13 +190,30 @@ async def cluster_neurons(
                 )
             )
 
-    # Embed
-    embeddings = await get_openai_embeddings_async(
-        get_openai_client_async(),
-        [n.description for n in neurons_with_descriptions],
-        dimensions=3072,
-    )
-    embedding_array = np.array(embeddings)
+    if len(neurons_with_descriptions) < 2:
+        return [], 0
+
+    # The database already stores embeddings for these descriptions. Use them if
+    # the live embedding API stalls or returns an incomplete batch.
+    try:
+        embeddings = await asyncio.wait_for(
+            get_openai_embeddings_async(
+                get_openai_client_async(),
+                [n.description for n in neurons_with_descriptions],
+                dimensions=3072,
+            ),
+            timeout=20,
+        )
+        if len(embeddings) != len(neurons_with_descriptions) or any(
+            embedding is None for embedding in embeddings
+        ):
+            raise EmbeddingException("Embedding API returned an incomplete batch")
+        embedding_array = np.asarray(embeddings, dtype=float)
+    except Exception as exc:
+        print(f"Embedding API unavailable ({type(exc).__name__}); using stored embeddings.")
+        embedding_array = await asyncio.to_thread(
+            _get_stored_embeddings, neurons_with_descriptions
+        )
 
     # Perform hierarchical clustering
     linkage_matrix = sch.linkage(embedding_array, method="average", metric="cosine")  # type: ignore
