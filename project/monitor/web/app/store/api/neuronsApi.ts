@@ -67,6 +67,7 @@ export const neuronsApi = createApi({
         url: `neurons/cluster/${params.sessionId}`,
         method: 'POST',
         body: params.filter,
+        timeout: 90000,
       }),
       transformResponse: (response: ClusterNeuronsResponse, meta, arg) => ({
         clusters: response.clusters,
