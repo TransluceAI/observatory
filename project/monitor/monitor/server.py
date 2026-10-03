@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from functools import lru_cache
@@ -331,8 +332,14 @@ async def linter(
             if description is not None and description.is_interesting:
                 neurons_interesting.append(neuron)
 
-    clusters, n_failures = await cluster_neurons(
-        neurons_interesting, neurons_metadata_dict, max_similarity_score=2, min_size=3
-    )
+    try:
+        clusters, n_failures = await asyncio.wait_for(
+            cluster_neurons(
+                neurons_interesting, neurons_metadata_dict, max_similarity_score=2, min_size=3
+            ),
+            timeout=75,
+        )
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="Cluster scan timed out")
 
     return ClusterResponse(clusters=clusters, n_failures=n_failures)
