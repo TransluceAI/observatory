@@ -31,8 +31,8 @@ class LLMManager:
                 "async_completion_getter": anthropic.get_anthropic_chat_completions_async,
                 "completion_parser": anthropic.parse_anthropic_completion,
                 "models": {
-                    "smart": "claude-3-5-sonnet-20241022",
-                    "fast": "claude-3-haiku-20240307",
+                    "smart": "claude-sonnet-4-6",
+                    "fast": "claude-haiku-4-5-20251001",
                 },
             },
             "openai": {
